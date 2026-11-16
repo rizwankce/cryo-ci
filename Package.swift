@@ -16,7 +16,7 @@ let package = Package(
 		.executable(name: "cryo-ci", targets: ["cryo-ci"])
 	],
 	dependencies: [
-		.package(url: "https://github.com/rizwankce/cryo.git", branch: "main")
+		.package(url: "https://github.com/rizwankce/cryo.git", from: "0.1.0")
 	],
 	targets: [
 		.target(name: "CryoCI", dependencies: core),
