@@ -1,0 +1,99 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# While github.com/rizwankce/cryo is private, SwiftPM needs a read token for it: set the
+# CRYO_READ_TOKEN secret (a fine-grained token with Contents: read on that repo).
+env:
+  CRYO_READ_TOKEN: ${{ secrets.CRYO_READ_TOKEN }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # The hosted image already has Swift; only install if its version has drifted.
+      - name: Check preinstalled Swift
+        id: swift
+        run: |
+          if swift --version | grep -q 'Swift version 6.4.2 '; then
+            echo 'installed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: SwiftyLab/setup-swift@v1
+        if: steps.swift.outputs.installed != 'true'
+        with:
+          swift-version: '6.4.2'
+      - name: swift-format
+        run: swift format lint --strict --recursive Sources Tests Package.swift
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          ./actionlint -color
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check preinstalled Swift
+        id: swift
+        run: |
+          if swift --version | grep -q 'Swift version 6.4.2 '; then
+            echo 'installed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: SwiftyLab/setup-swift@v1
+        if: steps.swift.outputs.installed != 'true'
+        with:
+          swift-version: '6.4.2'
+      - name: Access to the cryo package
+        run: |
+          if [ -n "$CRYO_READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${CRYO_READ_TOKEN}@github.com/rizwankce/cryo".insteadOf "https://github.com/rizwankce/cryo"
+          fi
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-${{ runner.arch }}-swift-6.4.2-debug-${{ hashFiles('Package.swift', 'Package.resolved', 'Sources/**', 'Tests/**') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-swift-6.4.2-debug-
+      - run: swift test
+
+  macos:
+    # macos-latest is still macOS 26; cryo needs macOS 27 and its SDK.
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Identify toolchain
+        id: toolchain
+        run: |
+          xcode_version="$(xcodebuild -version)"
+          echo "$xcode_version"
+          swift --version
+          echo "xcode=$(echo "$xcode_version" | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Access to the cryo package
+        run: |
+          if [ -n "$CRYO_READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${CRYO_READ_TOKEN}@github.com/rizwankce/cryo".insteadOf "https://github.com/rizwankce/cryo"
+          fi
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-${{ steps.toolchain.outputs.xcode }}-debug-${{ hashFiles('Package.swift', 'Package.resolved', 'Sources/**', 'Tests/**') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-xcode-${{ steps.toolchain.outputs.xcode }}-debug-
+      - run: swift test
+      - name: Release build
+        run: |
+          swift build -c release --product cryo-ci
+          .build/release/cryo-ci --help

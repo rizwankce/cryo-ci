@@ -1,0 +1,15 @@
+{
+  "originHash" : "e33452e2cf61947b848dbe6e15586aea22fa21031aac2d2d5d1933fb51142955",
+  "pins" : [
+    {
+      "identity" : "cryo",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/rizwankce/cryo.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "f26f4a49c7887e09457b35e7e599ceef43c3a689"
+      }
+    }
+  ],
+  "version" : 3
+}
