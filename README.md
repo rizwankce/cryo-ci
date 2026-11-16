@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg">
+  <img alt="cryo-ci: GitHub Actions jobs on clean macOS VMs. A job runs on a thawed Mac mini while the other stays frozen." src="assets/hero-light.svg">
+</picture>
+
 # cryo-ci
 
 **GitHub Actions jobs on cryo capsules.** `cryo-ci` watches your repos for queued jobs that ask
