@@ -12,11 +12,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# While github.com/rizwankce/cryo is private, SwiftPM needs a read token for it: set the
-# CRYO_READ_TOKEN secret (a fine-grained token with Contents: read on that repo).
-env:
-  CRYO_READ_TOKEN: ${{ secrets.CRYO_READ_TOKEN }}
-
 jobs:
   lint:
     runs-on: ubuntu-24.04
@@ -56,11 +51,6 @@ jobs:
         if: steps.swift.outputs.installed != 'true'
         with:
           swift-version: '6.4.2'
-      - name: Access to the cryo package
-        run: |
-          if [ -n "$CRYO_READ_TOKEN" ]; then
-            git config --global url."https://x-access-token:${CRYO_READ_TOKEN}@github.com/rizwankce/cryo".insteadOf "https://github.com/rizwankce/cryo"
-          fi
       - uses: actions/cache@v4
         with:
           path: .build
@@ -82,11 +72,6 @@ jobs:
           echo "$xcode_version"
           swift --version
           echo "xcode=$(echo "$xcode_version" | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - name: Access to the cryo package
-        run: |
-          if [ -n "$CRYO_READ_TOKEN" ]; then
-            git config --global url."https://x-access-token:${CRYO_READ_TOKEN}@github.com/rizwankce/cryo".insteadOf "https://github.com/rizwankce/cryo"
-          fi
       - uses: actions/cache@v4
         with:
           path: .build
