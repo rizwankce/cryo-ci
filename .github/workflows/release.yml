@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# Least privilege by default; the release job asks for what it needs.
+permissions:
+  contents: read
+
+jobs:
+  release:
+    # macos-latest is still macOS 26; cryo needs macOS 27 and its SDK.
+    runs-on: xcode-27
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches cryoCIVersion
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          code_version="$(sed -n 's/^public let cryoCIVersion = "\(.*\)"$/\1/p' Sources/CryoCICLI/Context.swift)"
+          if [ -z "$code_version" ]; then
+            echo "::error::Could not read cryoCIVersion from Sources/CryoCICLI/Context.swift"
+            exit 1
+          fi
+          if [ "$tag_version" != "$code_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME says $tag_version but cryoCIVersion is $code_version. Bump it via a PR, merge, then tag main."
+            exit 1
+          fi
+      - name: Identify toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - run: swift build
+      - run: swift test
+      - name: Build the source tarball
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          git archive --prefix="cryo-ci-$V/" -o "cryo-ci-$V.tar.gz" "$GITHUB_REF_NAME"
+          shasum -a 256 "cryo-ci-$V.tar.gz" > "cryo-ci-$V.tar.gz.sha256"
+          cat "cryo-ci-$V.tar.gz.sha256"
+      - uses: actions/attest@v4
+        with:
+          subject-path: cryo-ci-*.tar.gz
+      - name: Create the release
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "cryo-ci-$V.tar.gz" "cryo-ci-$V.tar.gz.sha256" \
+            --verify-tag --generate-notes --title "$V"
