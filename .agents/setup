@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb (Debian, Linux) to build, test and lint cryo-ci: Swift 6.4.2 via swiftly
+# (matching CI), shellcheck, actionlint, the resolved cryo dependency and a warm debug build.
+# Idempotent: a stale snapshot only re-resolves and rebuilds what changed.
+set -euo pipefail
+
+swift_version="6.4.2"
+actionlint_version="1.7.7"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+step() {
+	local name="$1"
+	shift
+	local start=$SECONDS
+	echo "==> $name"
+	"$@"
+	echo "<== $name ($((SECONDS - start))s)"
+}
+
+apt_packages() {
+	# swiftly and the Swift toolchain's dependencies on Debian 13 (the orb image), plus shellcheck.
+	local wanted=(curl ca-certificates gnupg binutils binutils-gold git libc6-dev libcurl4-openssl-dev libedit2 libedit-dev
+		libgcc-14-dev libncurses-dev libpython3-dev libsqlite3-0 libstdc++-14-dev libxml2-dev libz3-dev pkg-config tzdata
+		unzip zip zlib1g-dev shellcheck)
+	local missing=()
+	local pkg
+	for pkg in "${wanted[@]}"; do
+		dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || missing+=("$pkg")
+	done
+	if ((${#missing[@]})); then
+		echo "Installing: ${missing[*]}"
+		sudo apt-get update -qq
+		sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${missing[@]}"
+	fi
+}
+
+install_swift() {
+	export SWIFTLY_HOME_DIR="$HOME/.local/share/swiftly"
+	export SWIFTLY_BIN_DIR="$HOME/.local/share/swiftly/bin"
+	if [[ ! -x "$SWIFTLY_BIN_DIR/swiftly" ]]; then
+		local tmp
+		tmp="$(mktemp -d)"
+		curl -fsSL -o "$tmp/swiftly.tar.gz" "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
+		tar -xzf "$tmp/swiftly.tar.gz" -C "$tmp"
+		"$tmp/swiftly" init --assume-yes --quiet-shell-followup --skip-install --no-modify-profile
+		rm -rf "$tmp"
+	fi
+	export PATH="$SWIFTLY_BIN_DIR:$PATH"
+	if ! swiftly list 2>/dev/null | grep -q "Swift $swift_version"; then
+		swiftly install "$swift_version" --assume-yes
+	fi
+	swiftly use --global-default "$swift_version" --assume-yes
+	hash -r
+	swift --version
+}
+
+persist_path() {
+	# Amp and supervised services start in login shells; give them swift, swiftly and actionlint.
+	local marker="# cryo-ci orb toolchain"
+	if ! grep -Fqx "$marker" "$HOME/.bash_profile" 2>/dev/null; then
+		cat >>"$HOME/.bash_profile" <<'EOF'
+
+# cryo-ci orb toolchain
+export SWIFTLY_HOME_DIR="$HOME/.local/share/swiftly"
+export SWIFTLY_BIN_DIR="$HOME/.local/share/swiftly/bin"
+case ":$PATH:" in *":$SWIFTLY_BIN_DIR:"*) ;; *) export PATH="$SWIFTLY_BIN_DIR:$HOME/.local/bin:$PATH" ;; esac
+EOF
+	fi
+}
+
+install_actionlint() {
+	local bin="$HOME/.local/bin/actionlint"
+	if [[ -x "$bin" ]] && "$bin" -version | head -1 | grep -qx "$actionlint_version"; then
+		return
+	fi
+	mkdir -p "$HOME/.local/bin"
+	local tmp
+	tmp="$(mktemp -d)"
+	curl -fsSL -o "$tmp/actionlint.tar.gz" \
+		"https://github.com/rhysd/actionlint/releases/download/v${actionlint_version}/actionlint_${actionlint_version}_linux_amd64.tar.gz"
+	tar -xzf "$tmp/actionlint.tar.gz" -C "$tmp" actionlint
+	mv "$tmp/actionlint" "$bin"
+	rm -rf "$tmp"
+}
+
+warm_build() {
+	swift package resolve
+	swift build --build-tests
+}
+
+step "apt packages" apt_packages
+step "Swift $swift_version" install_swift
+step "login shell PATH" persist_path
+step "actionlint $actionlint_version" install_actionlint
+step "resolve and build (debug, with tests)" warm_build
