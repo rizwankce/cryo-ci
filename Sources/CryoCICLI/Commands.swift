@@ -148,7 +148,9 @@ extension CryoCICLI {
 		if let cryo {
 			ciLog("cryo-ci: using \(cryo) for the runners' ssh")
 		} else {
-			ciLog("cryo-ci: cannot find the cryo program (looked next to cryo-ci, in Homebrew's bin, on PATH); every job will fail until it is installed, e.g. brew install cryo")
+			ciLog(
+				"cryo-ci: cannot find the cryo program (looked next to cryo-ci, in Homebrew's bin, on PATH); "
+					+ "every job will fail until it is installed, e.g. brew install cryo")
 		}
 		let launcher = GuestRunnerLauncher(
 			home: ctx.home,
