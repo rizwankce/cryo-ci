@@ -7,7 +7,7 @@ import CryoHTTP
 	import Foundation
 #endif
 
-public let cryoCIVersion = "0.1.0"
+public let cryoCIVersion = "0.1.1"
 
 /// Everything a command touches from the outside world, so tests can substitute it.
 public struct CLIContext {
