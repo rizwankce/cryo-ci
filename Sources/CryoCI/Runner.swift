@@ -236,7 +236,7 @@ public final class GuestRunnerLauncher: CapsuleRunnerLauncher, @unchecked Sendab
 
 	public init(
 		home: String, cache: RunnerCache, commands: any CommandRunner = ProcessRunner(outputCap: 1024 * 1024),
-		executable: String = cryoExecutable(), now: @escaping @Sendable () -> Double = nowSeconds,
+		executable: String = cryoExecutable() ?? "cryo", now: @escaping @Sendable () -> Double = nowSeconds,
 		log: @escaping @Sendable (String) -> Void
 	) {
 		self.local = LocalState(home: home)
@@ -385,15 +385,34 @@ public final class GuestRunnerLauncher: CapsuleRunnerLauncher, @unchecked Sendab
 	}
 }
 
-/// The `cryo` program for the runner's ProxyCommand: the one next to cryo-ci (both install to
-/// ~/.cryo/bin), else the first `cryo` on `path`, else plain `cryo` for ssh's shell to find.
+/// The `cryo` program for the runner's ProxyCommand, as an absolute path, or nil when none is found.
+/// Looked up in order: next to cryo-ci (both install to ~/.cryo/bin), next to how cryo-ci was
+/// invoked (a Homebrew symlink), Homebrew's stable links for the prefix a versioned Cellar path
+/// points into (`<prefix>/opt/cryo/bin`, `<prefix>/bin`; they survive `brew upgrade`), the first
+/// `cryo` on `path`, then the usual install directories, because a LaunchAgent's PATH is only
+/// /usr/bin:/bin:/usr/sbin:/sbin.
 public func cryoExecutable(
-	beside program: String = currentExecutablePath(), path: String? = getenv("PATH").map { String(cString: $0) }
-) -> String {
-	let dir = program.split(separator: "/", omittingEmptySubsequences: false).dropLast().joined(separator: "/")
-	let candidates = (dir.isEmpty ? [] : [dir]) + (path ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
+	beside program: String = currentExecutablePath(), path: String? = getenv("PATH").map { String(cString: $0) },
+	invokedAs invoked: String? = CommandLine.arguments.first,
+	fallbackDirectories: [String] = ["/opt/homebrew/bin", "/usr/local/bin"]
+) -> String? {
+	func parent(_ p: String) -> String? {
+		guard p.contains("/") else { return nil }
+		let dir = p.split(separator: "/", omittingEmptySubsequences: false).dropLast().joined(separator: "/")
+		return dir.isEmpty ? nil : dir
+	}
+	var candidates = [parent(program), invoked.flatMap(parent)].compactMap { $0 }
+	// <prefix>/Cellar/<formula>/<version>/bin/<program>
+	for p in [program, invoked].compactMap({ $0 }) {
+		let parts = p.components(separatedBy: "/Cellar/")
+		if parts.count == 2, !parts[0].isEmpty, parts[1].split(separator: "/").count >= 3 {
+			candidates += [parts[0] + "/opt/cryo/bin", parts[0] + "/bin"]
+		}
+	}
+	candidates += (path ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
+	candidates += fallbackDirectories
 	for d in candidates where access(d + "/cryo", X_OK) == 0 { return d + "/cryo" }
-	return "cryo"
+	return nil
 }
 
 /// Single-quotes `s` for a POSIX shell; plain words stay bare unless `always`.
