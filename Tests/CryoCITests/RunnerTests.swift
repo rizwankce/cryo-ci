@@ -316,9 +316,28 @@ struct TimeoutRecorder: CommandRunner {
 		for dir in [bin, onPath] {
 			try writeAtomically(dir + "/cryo", "#!/bin/sh\n", mode: 0o755)
 		}
-		#expect(cryoExecutable(beside: bin + "/cryo-ci", path: "\(empty):\(onPath)") == bin + "/cryo")
-		#expect(cryoExecutable(beside: empty + "/cryo-ci", path: "\(empty):\(onPath)") == onPath + "/cryo")
-		#expect(cryoExecutable(beside: empty + "/cryo-ci", path: empty) == "cryo")
+		#expect(cryoExecutable(beside: bin + "/cryo-ci", path: "\(empty):\(onPath)", invokedAs: nil, fallbackDirectories: []) == bin + "/cryo")
+		#expect(cryoExecutable(beside: empty + "/cryo-ci", path: "\(empty):\(onPath)", invokedAs: nil, fallbackDirectories: []) == onPath + "/cryo")
+		#expect(cryoExecutable(beside: empty + "/cryo-ci", path: empty, invokedAs: nil, fallbackDirectories: []) == nil)
+		#expect(cryoExecutable(beside: empty + "/cryo-ci", path: nil, invokedAs: nil, fallbackDirectories: [onPath]) == onPath + "/cryo")
+	}
+
+	/// Homebrew: cryo-ci resolves into Cellar/cryo-ci/<v>/bin, cryo lives in another keg; the
+	/// prefix's opt/ and bin/ links find it without PATH, and opt/ wins over a versioned path.
+	@Test func proxyCommandFindsCryoUnderHomebrew() throws {
+		let prefix = makeTempHome()
+		let cellar = prefix + "/Cellar/cryo-ci/0.1.0/bin"
+		try FileManager.default.createDirectory(atPath: cellar, withIntermediateDirectories: true)
+		try FileManager.default.createDirectory(atPath: prefix + "/bin", withIntermediateDirectories: true)
+		try FileManager.default.createDirectory(atPath: prefix + "/opt/cryo/bin", withIntermediateDirectories: true)
+		let resolved = cellar + "/cryo-ci"
+		try writeAtomically(prefix + "/bin/cryo", "#!/bin/sh\n", mode: 0o755)
+		#expect(cryoExecutable(beside: resolved, path: "", invokedAs: nil, fallbackDirectories: []) == prefix + "/bin/cryo")
+		try writeAtomically(prefix + "/opt/cryo/bin/cryo", "#!/bin/sh\n", mode: 0o755)
+		#expect(cryoExecutable(beside: resolved, path: "", invokedAs: nil, fallbackDirectories: []) == prefix + "/opt/cryo/bin/cryo")
+		// Invoked through the prefix's bin symlink, the resolved path unrelated.
+		let other = makeTempHome()
+		#expect(cryoExecutable(beside: other + "/cryo-ci", path: "", invokedAs: prefix + "/bin/cryo-ci", fallbackDirectories: []) == prefix + "/bin/cryo")
 	}
 
 	@Test func stagingIsAClone() throws {

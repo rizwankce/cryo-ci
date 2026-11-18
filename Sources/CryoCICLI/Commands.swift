@@ -66,6 +66,9 @@ extension CryoCICLI {
 				for r in o.repos { argv += ["--repo", r] }
 				if let l = p.values["labels"] { argv += ["--labels", l] }
 				if let t = o.timeout { argv += ["--timeout-minutes", String(t)] }
+				if cryoExecutable() == nil {
+					ctx.warn("cryo-ci: warning: cannot find the cryo program; jobs will fail until it is installed (brew install cryo)")
+				}
 				try agent.install(arguments: argv)
 				ctx.say("installed LaunchAgent \(CIAgent.label) (\(agent.plistPath)); it starts at login and restarts if it exits")
 				ctx.say("log: \(agent.logPath)    status: cryo-ci status")
@@ -141,9 +144,16 @@ extension CryoCICLI {
 		if let timeout { for r in repos { config.timeoutMinutes[r] = timeout } }
 		let ciLog: @Sendable (String) -> Void = { writeAll(2, $0 + "\n") }
 		// Only macOS gets here (cryo-ci is macOS bay only, CLI.swift).
+		let cryo = cryoExecutable()
+		if let cryo {
+			ciLog("cryo-ci: using \(cryo) for the runners' ssh")
+		} else {
+			ciLog("cryo-ci: cannot find the cryo program (looked next to cryo-ci, in Homebrew's bin, on PATH); every job will fail until it is installed, e.g. brew install cryo")
+		}
 		let launcher = GuestRunnerLauncher(
 			home: ctx.home,
-			cache: RunnerCache(home: ctx.home, transport: transport(), token: token, log: ciLog), log: ciLog)
+			cache: RunnerCache(home: ctx.home, transport: transport(), token: token, log: ciLog),
+			executable: cryo ?? "cryo", log: ciLog)
 		var host = [CChar](repeating: 0, count: 256)
 		gethostname(&host, host.count - 1)
 		let poller = CIPoller(
